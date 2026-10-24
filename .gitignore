@@ -1,0 +1,9 @@
+csrc/
+simv*
+*.daidir/
+ucli.key
+*_simv
+*.jou
+*.log
+*.str
+.Xil/
