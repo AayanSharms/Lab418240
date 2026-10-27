@@ -110,3 +110,46 @@ initial begin
 end
 
 endmodule : VGA_test
+
+// Generates an 8-stripe color test pattern on the top half of the screen
+// and black on the bottom half, for checking VGA timing.
+module TestPatternGenerator
+    (input  logic [9:0] row, col,
+    output logic [7:0] red, green, blue);
+
+    logic redOn, greenOn, blueOn, bottomHalf;
+    logic greenLeft, greenRight, blue1, blue3, blue5, blue7;
+
+    RangeCheck #(10) redCheck (.val(col), .low(10'd400), .high(10'd799),
+                                .is_between(redOn));
+
+    OffsetCheck #(10) greenLeftCheck (.val(col), .low(10'd200), .delta(10'd199),
+                                        .is_between(greenLeft));
+
+    RangeCheck #(10) greenRightCheck (.val(col), .low(10'd600), .high(10'd799),
+                                        .is_between(greenRight));
+
+    RangeCheck #(10) blue1Check (.val(col), .low(10'd100), .high(10'd199),
+                                .is_between(blue1));
+
+    RangeCheck #(10) blue3Check (.val(col), .low(10'd300), .high(10'd399),
+                                .is_between(blue3));
+
+    RangeCheck #(10) blue5Check (.val(col), .low(10'd500), .high(10'd599),
+                                .is_between(blue5));
+                                
+    RangeCheck #(10) blue7Check (.val(col), .low(10'd700), .high(10'd799),
+                                .is_between(blue7));
+
+    RangeCheck #(10) bottomCheck (.val(row), .low(10'd300), .high(10'd599),
+                                    .is_between(bottomHalf));
+
+    assign greenOn = greenLeft | greenRight;
+    assign blueOn  = blue1 | blue3 | blue5 | blue7;
+
+    assign red   = (redOn   & ~bottomHalf) ? 8'hFF : 8'h00;
+    assign green = (greenOn & ~bottomHalf) ? 8'hFF : 8'h00;
+    assign blue  = (blueOn  & ~bottomHalf) ? 8'hFF : 8'h00;
+
+endmodule : TestPatternGenerator
+
