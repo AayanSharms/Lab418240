@@ -9,9 +9,18 @@ module ChipInterface
    output logic [ 2:0] HDMI_TX_P, HDMI_TX_N);
 
   // Signals for the clock wizard and HDMI IP
-  logic clock_40MHz, clock_200MHz, locked;
+  logic clk_40MHz, clock_200MHz, locked;
 
   // Define your signals here
+  logic reset;
+  logic HS, VS, blank;
+  logic [9:0] row, col;
+  logic [7:0] red, green, blue;
+
+
+  
+  
+
 
   // Instantiate your TPG
   TestPatternGenerator tpg(
@@ -24,7 +33,7 @@ module ChipInterface
 
   // Instantiate your VGA module
   VGA vga(
-    .clock_40MHz,
+    .clock_40MHz(clk_40MHz),
     .reset,
     .HS,
     .VS,
@@ -53,12 +62,12 @@ module ChipInterface
     .rst(reset),
 
     //Color and Sync Signals
-    .red(),        // TODO: Connect your red channel
-    .green(),      // TODO: Connect your green channel
-    .blue(),       // TODO: Connect your blue channel
-    .hsync(),      // TODO: Connect your HS
-    .vsync(),      // TODO: Connect your VS
-    .vde(),        // TODO: Connect your blank signal
+    .red(red),        // TODO: Connect your red channel
+    .green(green),      // TODO: Connect your green channel
+    .blue(blue),       // TODO: Connect your blue channel
+    .hsync(HS),      // TODO: Connect your HS
+    .vsync(VS),      // TODO: Connect your VS
+    .vde(blank),        // TODO: Connect your blank signal
 
     //aux Data (unused)
     .aux0_din(4'b0),
@@ -74,3 +83,26 @@ module ChipInterface
   );
 
 endmodule : ChipInterface
+
+
+// 7 Segment Display
+// 7 Segment Display Interface
+module BCDtoSevenSegment
+(input logic [3:0] number,
+output logic [6:0] segment);
+
+always_comb
+    case(number)
+        4'd0: segment = 7'b0111111;
+        4'd1: segment = 7'b0000110;
+        4'd2: segment = 7'b1011011;
+        4'd3: segment = 7'b1001111;
+        4'd4: segment = 7'b1100110;
+        4'd5: segment = 7'b1101101;
+        4'd6: segment = 7'b1111101;
+        4'd7: segment = 7'b0000111;
+        4'd8: segment = 7'b1111111;
+        4'd9: segment = 7'b1100111;
+    endcase
+
+endmodule : BCDtoSevenSegment
