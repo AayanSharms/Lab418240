@@ -9,7 +9,7 @@ module ChipInterface
    output logic [ 2:0] HDMI_TX_P, HDMI_TX_N);
 
   // Signals for the clock wizard and HDMI IP
-  logic clk_40MHz, clock_200MHz, locked;
+  logic clk_40MHz, clk_200MHz, locked;
 
   // Define your signals here
   logic reset;

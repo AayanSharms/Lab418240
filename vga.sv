@@ -1,4 +1,4 @@
-`default_nettype none
+//`default_nettype none
 module VGA
 (input logic clock_40MHz, reset,
 output logic HS, VS, blank,
@@ -103,6 +103,13 @@ initial begin
     for (counter = 20'b0; counter < 20'd770; counter++) begin
         @ (posedge clock_40MHz);
     end
+
+    // spams a bunch of clocks
+    for (counter = 20'b0; counter < 3 * 'd633600; counter++) begin
+        @ (posedge clock_40MHz);
+    end
+
+
 
     // wait until next row starts
 

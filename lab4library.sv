@@ -1,4 +1,4 @@
-`default_nettype none
+//`default_nettype none
 
 module Decoder
     #(parameter WIDTH = 8, IW = $clog2(WIDTH))
