@@ -18,7 +18,7 @@ module ChipInterface
   logic [7:0] red, green, blue;
 
 
-  
+  tester test(.row, .col, .red, .green, .blue);
   
 
 
