@@ -18,6 +18,7 @@ module ChipInterface
   logic [7:0] red, green, blue;
 
 
+<<<<<<< HEAD
   // MODULE INSTANTIATIONS
 
   // need to update labels in case b/c modules.sv has been updated since
@@ -66,6 +67,9 @@ module ChipInterface
 
   // tester
   /* tester test(.row, .col, .red, .green, .blue); */
+=======
+  tester test(.row, .col, .red, .green, .blue);
+>>>>>>> 9efcad0fa491b33caac1d0a13da0cd8396a5de37
   
 
 
