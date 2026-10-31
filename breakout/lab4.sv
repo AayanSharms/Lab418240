@@ -17,59 +17,12 @@ module ChipInterface
   logic [9:0] row, col;
   logic [7:0] red, green, blue;
 
+  logic [3:0] btn_sync;
+  Synchronizer #(4) btn_synchronizer (.clock(clk_40MHz), .async_in(BTN), .sync_out(btn_sync));
+  assign reset = btn_sync[0];
 
-<<<<<<< HEAD
-  // MODULE INSTANTIATIONS
 
-  // need to update labels in case b/c modules.sv has been updated since
-  // thus, those below are outdated
-
-  // Game Clock
-  logic game_clock;
-
-  GameClock gc (.row, .col, .game_clock);
-
-  // Wall
-  logic [7:0] w_red, w_green, w_blue;
-  Wall wa (.row, .col, .red(w_red), .green(w_green), .blue(w_blue));
-
-  // Paddle
-  logic [7:0] p_red, p_green, p_blue;
-
-  Paddle pa (.row, .col, .row_ball, .col_ball, .BTN2(BTN[2]), .BTN3(BTN[3]),
-            .game_clock, .reset, .collision(paddle_collision), .red(p_red),
-            .green(p_green), .blue(p_blue)); // missing outputs: col_left, col_max
-
-  // Ball
-  logic brick_collision, wall_collision, paddle_collision,
-  restart, intermission;
-  logic [9:0] col_ball, row_ball;
-  logic [7:0] ba_red, ba_green, ba_blue;
-  logic [1:0] lives_left;
-
-  Ball ba (.row, .col, .brick_collision, .wall_collision, .paddle_collision,
-          .game_clock, .reset, .restart, .BTN1(BTN[1]), .intermission,
-            .col_ball, .row_ball, .red(ba_red), .green(ba_green), .blue(ba_blue),
-            .lives_left);
-
-  // Intermission
-  logic [7:0] i_red, i_green, i_blue;
-
-  Intermission inter (.row, .col, .lives_left, .bricks_active, .BTN1(BTN[1]),
-                      .red(i_red), .green(i_green), .blue(i_blue), .active(intermission), .restart);  
-
-  // Bricks
-  logic [7:0] brick_red, brick_green, brick_blue;
-
-  Bricks bric (.row, .col, .col_ball, .row_ball, .game_clock, .reset, .restart,
-              .red(brick_red), .green(brick_green), .blue(brick_blue),
-                .bricks_active, .collision(brick_collision));
-
-  // tester
-  /* tester test(.row, .col, .red, .green, .blue); */
-=======
   tester test(.row, .col, .red, .green, .blue);
->>>>>>> 9efcad0fa491b33caac1d0a13da0cd8396a5de37
   
 
 

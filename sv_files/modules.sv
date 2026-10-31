@@ -24,7 +24,7 @@ output logic game_clock);
 
 always_comb begin
     case ({row, col})
-        {10'd600, 10'd800}: game_clock = 1'b1;
+        {10'd599, 10'd799}: game_clock = 1'b1;
         default: game_clock = 1'b0;
     endcase
 end
@@ -65,15 +65,57 @@ end
 endmodule : ColorModule
 
 module Wall
-    (input logic [9:0] row, col,
-    output logic [7:0] red, green, blue);
+    (input logic [9:0] row, col, row_ball, col_ball,
+    input logic intermission, bricks_active,
+    input logic [1:0] lives_left,
+    output logic [7:0] red, green, blue,
+    output logic side_collision, top_collision);
 
-    logic redOn, greenOn, blueOn;
-
+    logic [7:0] redOn, greenOn, blueOn;
     ColorModule cm (.module_type('d0), .red(redOn), .green(greenOn), .blue(blueOn));
-    assign red = 8'hCC ? (col<=10'd49 & col >= 10'd20 & row >= 10'd10 & row <= 10'd589) : '0;
-    assign blue = blueOn ? (col<=10'd49 & col >= 10'd20 & row >= 10'd10 & row <= 10'd589) : '0;
-    assign green = greenOn ? (col<=10'd49 & col >= 10'd20 & row >= 10'd10 & row <= 10'd589) : '0;
+
+    // column ranges
+    logic leftCol, rightCol, topCol;
+    RangeCheck #(10) left_col (.val(col), .low(10'd20), .high(10'd49), .is_between(leftCol));
+    RangeCheck #(10) right_col (.val(col), .low(10'd740), .high(10'd779), .is_between(rightCol));
+    RangeCheck #(10) top_col (.val(col), .low(10'd20), .high(10'd779), .is_between(topCol));
+
+    // row ranges
+    logic sideRows, topRows;
+    RangeCheck #(10) side_row (.val(row), .low(10'd10), .high(10'd589), .is_between(sideRows));
+    RangeCheck #(10) top_row (.val(row), .low(10'd10), .high(10'd39), .is_between(topRows));
+
+    logic inWall;
+    assign inWall = (leftCol & sideRows) | (rightCol & sideRows) | (topCol & topRows);
+
+    // win/lose state
+    logic won, lost;
+    assign won = ~bricks_active;
+    assign lost = (lives_left == 2'd0);
+
+    // Sets pixel outputs
+    always_comb begin
+        if (~inWall) begin
+            red = 8'h00; green = 8'h00; blue = 8'h00;
+        end
+        else if (intermission & won) begin // green if won
+            red = 8'h00; green = 8'hFF; blue = 8'h00;
+        end
+        else if (intermission & lost) begin // red if lost
+            red = 8'hFF; green = 8'h00; blue = 8'h00;
+        end
+        else begin
+            red = redOn; green = greenOn; blue = blueOn;
+        end
+    end
+
+    // Combinational Collision Testing w/ ball
+    logic hitLeft, hitRight;
+    OffsetCheck #(10) lc (.val(10'd49), .low(col_ball - 10'd1), .delta(10'd6), .is_between(hitLeft));
+    OffsetCheck #(10) rc (.val(10'd740), .low(col_ball), .delta(10'd6), .is_between(hitRight));
+    OffsetCheck #(10) tc (.val(10'd39), .low(row_ball - 10'd2), .delta(10'd7), .is_between(top_collision));
+
+    assign side_collision = hitLeft | hitRight;
 
 endmodule : Wall
 
@@ -453,3 +495,18 @@ always_comb begin
 end
 
 endmodule : tester
+
+
+module Synhcronizer 
+    # (parameter WIDTH = 4)
+    (input logic clock 
+    input logic [WIDTH-1 : 0] async_in
+    output logic [WIDTH-1 : 0] sync_out);
+
+    logic [WIDTH-1:0] meta;
+
+    always_ff @(posedge clock) begin
+        meta <= async_in
+        sync_out <= meta
+    end
+endmodule : Synhcronizer
