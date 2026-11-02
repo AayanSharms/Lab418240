@@ -11,81 +11,100 @@ module ChipInterface
   // Signals for the clock wizard and HDMI IP
   logic clk_40MHz, clk_200MHz, locked;
 
-  // Define your signals here
+  // Default signals
   logic reset;
   logic HS, VS, blank;
   logic [9:0] row, col;
   logic [7:0] red, green, blue;
 
+  // Sync user inputs
   logic [3:0] btn_sync;
   Synchronizer #(4) btn_synchronizer (.clock(clk_40MHz), .async_in(BTN), .sync_out(btn_sync));
   assign reset = btn_sync[0];
+  assign BTN1 = btn_sync[1];
+  assign BTN2 = btn_sync[2];
+  assign BTN3 = btn_sync[3];
 
+  // MODULE INSTANTIATIONS
 
-// MODULE INSTANTIATIONS
+  // Colors
+  logic [7:0] p_red, p_green, p_blue; // paddle
+  logic [7:0] ba_red, ba_green, ba_blue; // ball
+  logic [7:0] brick_red, brick_green, brick_blue; // bricks
+  logic [7:0] w_red, w_green, w_blue; // wall
+  logic [7:0] i_red, i_green, i_blue; // intermission
+  // Color generation
+  assign red = p_red | ba_red | brick_red | w_red | i_red;
+  assign green = p_green | ba_green | brick_green | w_green | i_green;
+  assign blue = p_blue | ba_blue | brick_blue | w_blue | i_blue;
+  
+  // Collision types
+  logic brick_collision_top, wall_collision_top, paddle_collision_top,
+  brick_collision_side, wall_collision_side, paddle_collision_side;
 
-  // need to update labels in case b/c modules.sv has been updated since
-  // thus, those below are outdated
-
-
-  // IMPORTANT
-  // IMPORTANT Add synchronizers to async inputs
-  // IMPORTANT also need FSM / datapath designs of modules
-  // IMPORTANT
+  // Other declarations
+  logic restart, intermission, bricks_active;
+  logic [9:0] col_ball, row_ball; // maybe remove
+  logic [1:0] lives_left;
 
   // Game Clock
   logic game_clock;
-
   GameClock gc (.row, .col, .game_clock);
 
+  // Score
+  // note: inversion of DSEG output already done
+  Score sc(.lives_left, .DSEG(D1_SEG));
+  assign D2_SEG = 7'b111_1111; // set other display to 0
+
   // Wall
-  logic [7:0] w_red, w_green, w_blue;
-  Wall wa (.row, .col, .red(w_red), .green(w_green), .blue(w_blue));
+  Wall wa (.row, .col, .row_ball, .col_ball,
+          .intermission, .bricks_active, .lives_left,
+          .red(w_red), .green(w_green), .blue(w_blue),
+          .top_collision(wall_collision_top),
+          .side_collision(wall_collision_side));
 
   // Paddle
-  logic [7:0] p_red, p_green, p_blue;
-
-  Paddle pa (.row, .col, .row_ball, .col_ball, .BTN2(BTN[2]), .BTN3(BTN[3]),
-            .game_clock, .reset, .collision(paddle_collision), .red(p_red),
-            .green(p_green), .blue(p_blue)); // missing outputs: col_left, col_max
+  Paddle pa (.row, .col, .row_ball, .col_ball, .BTN2, .BTN3,
+            .clk_40MHz, .game_clock, .reset,
+            .top_collision(paddle_collision_top), 
+            .side_collision(paddle_collision_side), 
+            .red(p_red), .green(p_green), .blue(p_blue));
+            // missing outputs: col_left, col_max
 
   // Ball
-  logic brick_collision, wall_collision, paddle_collision,
-  restart, intermission;
-  logic [9:0] col_ball, row_ball;
-  logic [7:0] ba_red, ba_green, ba_blue;
-  logic [1:0] lives_left;
-
-  Ball ba (.row, .col, .brick_collision, .wall_collision, .paddle_collision,
-          .game_clock, .reset, .restart, .BTN1(BTN[1]), .intermission,
-            .col_ball, .row_ball, .red(ba_red), .green(ba_green), .blue(ba_blue),
+  Ball ba (.row, .col, .clk_40MHz,
+          .brick_collision_top, .wall_collision_top, .paddle_collision_top,
+          .brick_collision_side, .wall_collision_side, .paddle_collision_side,
+          .game_clock, .reset, .restart, .BTN1, .intermission,
+            .col_ball, .row_ball, 
+            .red(ba_red), .green(ba_green), .blue(ba_blue),
             .lives_left);
 
   // Intermission
-  logic [7:0] i_red, i_green, i_blue;
-
-  Intermission inter (.row, .col, .lives_left, .bricks_active, .BTN1(BTN[1]),
-                      .red(i_red), .green(i_green), .blue(i_blue), .active(intermission), .restart);  
+  Intermission inter (.row, .col, .lives_left, .bricks_active, .BTN1,
+                      .red(i_red), .green(i_green), .blue(i_blue), 
+                      .active(intermission), .restart);  
 
   // Bricks
-  logic [7:0] brick_red, brick_green, brick_blue;
-
-  Bricks bric (.row, .col, .col_ball, .row_ball, .game_clock, .reset, .restart,
+  Bricks bric (.row, .col, .col_ball, .row_ball,
+              .game_clock, .clk_40MHz, .reset, .restart,
               .red(brick_red), .green(brick_green), .blue(brick_blue),
-                .bricks_active, .collision(brick_collision));
+                .bricks_active, 
+                .top_collision(brick_collision_top),
+                .side_collision(brick_collision_side));
 
-  // tester
+  // Test modules
   /* tester test(.row, .col, .red, .green, .blue); */  
 
-
   // Instantiate your TPG
+  /*
   TestPatternGenerator tpg(
     .row,
     .col,
     .red,
     .green,
     .blue
-   );
+   );*/
 
   // Instantiate your VGA module
   VGA vga(
@@ -139,26 +158,3 @@ module ChipInterface
   );
 
 endmodule : ChipInterface
-
-
-// 7 Segment Display
-// 7 Segment Display Interface
-module BCDtoSevenSegment
-(input logic [3:0] number,
-output logic [6:0] segment);
-
-always_comb
-    case(number)
-        4'd0: segment = 7'b0111111;
-        4'd1: segment = 7'b0000110;
-        4'd2: segment = 7'b1011011;
-        4'd3: segment = 7'b1001111;
-        4'd4: segment = 7'b1100110;
-        4'd5: segment = 7'b1101101;
-        4'd6: segment = 7'b1111101;
-        4'd7: segment = 7'b0000111;
-        4'd8: segment = 7'b1111111;
-        4'd9: segment = 7'b1100111;
-    endcase
-
-endmodule : BCDtoSevenSegment

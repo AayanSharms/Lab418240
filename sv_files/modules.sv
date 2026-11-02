@@ -21,15 +21,23 @@ rows 10’d10- 10’d39. During play, the walls are grey colored (red, green and
 module GameClock
 (input logic [9:0] row, col,
 output logic game_clock);
-
 always_comb begin
     case ({row, col})
         {10'd600, 10'd800}: game_clock = 1'b1;
         default: game_clock = 1'b0;
     endcase
 end
+endmodule : GameClock
 
-endmodule
+
+// Displays score on digital segment using BCDtoSevenSegment
+module Score
+(input logic [1:0] lives_left,
+output logic [7:0] DSEG);
+logic [7:0] ds_inverted;
+BCDtoSevenSegment(.number({2'b0, lives_left}), .segment(ds_inverted));
+assign DSEG = ~ds_inverted;
+endmodule : Score
 
 /*
 ColorModule key:
@@ -126,7 +134,7 @@ module Paddle
 (input logic [9:0] row, col, row_ball, col_ball,
 input logic BTN2, BTN3, clk_40MHz, game_clock, reset,
 output logic [7:0] red, green, blue,
-output logic [9:0] col_left, col_max,
+output logic [9:0] col_left, col_max, // unnecessary?
 output logic top_collision, side_collision);
 
 logic [7:0] redOn, greenOn, blueOn;
@@ -144,19 +152,25 @@ assign green = (valid_row & valid_col) ? greenOn : '0;
 assign blue = (valid_row & valid_col) ? blueOn : '0;
 
 // assign left col index
+// unnecessary? remove?
 assign col_max = col_left + 10'd80;
 
 
 // Combinational Collision Testing w/ ball
-logic col_collision, row_collision, side_contact, vertical_contact;
-OffsetCheck #(10) cc1 (.val(col_ball), .low(col_left - 10'd6), .delta(10'd79 + 10'd6), .is_between(col_collision));
-OffsetCheck #(10) rc1 (.val(row_ball), .low(10'd555 - 10'd6), .delta(10'd25 + 10'd5), .is_between(row_collision));
+logic col_collision, row_collision, side_contact, top_contact;
+OffsetCheck #(10) cc1 (.val(col_ball), .low(col_left - 10'd6), .delta(10'd80 + 10'd6), .is_between(col_collision));
+OffsetCheck #(10) rc1 (.val(row_ball), .low(10'd555 - 10'd6), .delta(10'd25 + 10'd6), .is_between(row_collision));
 
-OffsetCheck #(10) cc2 (.val(col_ball), .low(col_left - 10'd1), .delta(10'd79 + ), .is_between(vertical_contact));
-OffsetCheck #(10) rc2 (.val(row_ball), .low(10'd555 - 10'd1), .delta(10'd25), .is_between(side_contact));
+// determine if top or side collision
+OffsetCheck #(10) side_check (.val(row_ball), .low(10'd555 - 10'd6 + 10'd1), 
+                            .delta(10'd5 + 10'd25 - 10'd1), 
+                            .is_between(side_contact));
+OffsetCheck #(10) top_check (.val(col_ball), .low(col_left - 10'd6 + 10'd1), 
+                            .delta(10'd5 + 10'd80 - 10'd1), 
+                            .is_between(top_contact));
 
 assign side_collision = col_collision & row_collision & side_contact;
-assign top_collision = col_collision & row_collision & vertical_contact;
+assign top_collision = col_collision & row_collision & top_contact;
 
 // POSITION UDPATES (PER GAME_CLOCK)
 always_ff @(posedge clk_40MHz, posedge reset)
@@ -320,7 +334,7 @@ module Brick
 #(parameter logic [9:0] TL_COL = 10'd0, TL_ROW = 10'd0,
             WIDTH = 10'd100, HEIGHT = 10'd30) // parameterize size
 (input logic [9:0] row, col, col_ball, row_ball,
-input logic game_clock, clk_40MHz, reset,
+input logic game_clock, clk_40MHz, reset, restart,
 output logic top_collision, side_collision, active, // check if outputs display correctly
 input logic [7:0] redOn, greenOn, blueOn,
 output logic [7:0] red, green, blue);
@@ -337,22 +351,29 @@ assign blue = (valid_row & valid_col & active) ? blueOn : '0;
 
 
 // Combinational Collision Testing w/ ball
-logic col_collision, row_collision, side_contact, vertical_contact;
-OffsetCheck #(10) cc1 (.val(col_ball), .low(TL_COL - 10'd6), .delta(WIDTH - 1 + 10'd6), .is_between(col_collision));
-OffsetCheck #(10) rc1 (.val(row_ball), .low(TL_ROW - 10'd6), .delta(HEIGHT - 1 + 10'd6), .is_between(row_collision));
+logic col_collision, row_collision, side_contact, top_contact;
+OffsetCheck #(10) cc1 (.val(col_ball), .low(TL_COL - 10'd6), .delta(WIDTH + 10'd6), .is_between(col_collision));
+OffsetCheck #(10) rc1 (.val(row_ball), .low(TL_ROW - 10'd6), .delta(HEIGHT + 10'd6), .is_between(row_collision));
 
-OffsetCheck #(10) cc2 (.val(col_ball), .low(TL_COL - 10'd1), .delta(WIDTH), .is_between(vertical_contact));
-OffsetCheck #(10) rc2 (.val(row_ball), .low(TL_ROW - 10'd1), .delta(HEIGHT), .is_between(side_contact));
+// determine if top or side collision
+OffsetCheck #(10) side_check (.val(row_ball), .low(TL_ROW - 10'd6 + 10'd1), 
+                            .delta(10'd5 + HEIGHT - 10'd1), 
+                            .is_between(side_contact));
+OffsetCheck #(10) top_check (.val(col_ball), .low(TL_COL - 10'd6 + 10'd1), 
+                            .delta(10'd5 + WIDTH - 10'd1), 
+                            .is_between(top_contact));
 
 assign side_collision = col_collision & row_collision & active & side_contact;
-assign top_collision = col_collision & row_collision & active & vertical_contact;
+assign top_collision = col_collision & row_collision & active & top_contact;
 
 always_ff @(posedge clk_40MHz, posedge reset)
 if (reset)
     active <= 1'b1; // make active again
 else if (game_clock) begin
+    if (restart)
+        active <= 1'b1;
     // if collision, then disable the Brick
-    if (side_collision | top_collision)
+    else if (side_collision | top_collision)
         active <= 1'b0; // disable if collision
     else
         active <= active; // keep active as is
@@ -394,7 +415,7 @@ assign blue = b0b | b1b | b2b | b3b | b4b | b5b | b6b | b7b
 // top row
 Brick #(70, 100, 100, 30) b0 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), 
+                                .reset, .restart,
                                 .top_collision(top_collision_status[0]), 
                                 .side_collision(side_collision_status[0]), 
                                 .active(active_status[0]),
@@ -404,7 +425,7 @@ Brick #(70, 100, 100, 30) b0 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b0r), .green(b0g), .blue(b0b)); 
 Brick #(170, 100, 100, 30) b1 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[1]), 
                                 .side_collision(side_collision_status[1]), 
                                 .active(active_status[1]),
@@ -414,7 +435,7 @@ Brick #(170, 100, 100, 30) b1 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b1r), .green(b1g), .blue(b1b)); 
 Brick #(270, 100, 100, 30) b2 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[2]), 
                                 .side_collision(side_collision_status[2]), 
                                 .active(active_status[2]),
@@ -424,7 +445,7 @@ Brick #(270, 100, 100, 30) b2 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b2r), .green(b2g), .blue(b2b)); 
 Brick #(370, 100, 100, 30) b3 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[3]), 
                                 .side_collision(side_collision_status[3]), 
                                 .active(active_status[3]),
@@ -434,7 +455,7 @@ Brick #(370, 100, 100, 30) b3 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b3r), .green(b3g), .blue(b3b)); 
 Brick #(470, 100, 100, 30) b4 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[4]), 
                                 .side_collision(side_collision_status[4]), 
                                 .active(active_status[4]),
@@ -444,7 +465,7 @@ Brick #(470, 100, 100, 30) b4 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b4r), .green(b4g), .blue(b4b)); 
 Brick #(570, 100, 100, 30) b5 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[5]), 
                                 .side_collision(side_collision_status[5]),  
                                 .active(active_status[5]),
@@ -454,7 +475,7 @@ Brick #(570, 100, 100, 30) b5 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b5r), .green(b5g), .blue(b5b)); 
 Brick #(670, 100, 50, 30) b6 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[6]), 
                                 .side_collision(side_collision_status[6]),
                                 .active(active_status[6]),
@@ -466,7 +487,7 @@ Brick #(670, 100, 50, 30) b6 (.row, .col, .col_ball, .row_ball, .game_clock,
 // 2nd row
 Brick #(70, 150, 50, 30) b7 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[7]), 
                                 .side_collision(side_collision_status[7]),
                                 .active(active_status[7]),
@@ -476,7 +497,7 @@ Brick #(70, 150, 50, 30) b7 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b7r), .green(b7g), .blue(b7b)); 
 Brick #(120, 150, 100, 30) b8 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[8]), 
                                 .side_collision(side_collision_status[8]),
                                 .active(active_status[8]),
@@ -486,7 +507,7 @@ Brick #(120, 150, 100, 30) b8 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b8r), .green(b8g), .blue(b8b)); 
 Brick #(220, 150, 100, 30) b9 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[9]), 
                                 .side_collision(side_collision_status[9]),
                                 .active(active_status[9]),
@@ -496,7 +517,7 @@ Brick #(220, 150, 100, 30) b9 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b9r), .green(b9g), .blue(b9b)); 
 Brick #(320, 150, 100, 30) b10 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[10]), 
                                 .side_collision(side_collision_status[10]),
                                 .active(active_status[10]),
@@ -506,7 +527,7 @@ Brick #(320, 150, 100, 30) b10 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b10r), .green(b10g), .blue(b10b)); 
 Brick #(420, 150, 100, 30) b11 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[11]), 
                                 .side_collision(side_collision_status[11]),
                                 .active(active_status[11]),
@@ -516,7 +537,7 @@ Brick #(420, 150, 100, 30) b11 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b11r), .green(b11g), .blue(b11b)); 
 Brick #(520, 150, 100, 30) b12 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[12]), 
                                 .side_collision(side_collision_status[12]),
                                 .active(active_status[12]),
@@ -526,7 +547,7 @@ Brick #(520, 150, 100, 30) b12 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b12r), .green(b12g), .blue(b12b)); 
 Brick #(620, 150, 100, 30) b13 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart),
+                                .reset, .restart,
                                 .top_collision(top_collision_status[13]), 
                                 .side_collision(side_collision_status[13]),
                                 .active(active_status[13]),
@@ -537,6 +558,29 @@ Brick #(620, 150, 100, 30) b13 (.row, .col, .col_ball, .row_ball, .game_clock,
 
 endmodule : Bricks
 
+// 7 Segment Display Interface (for score)
+module BCDtoSevenSegment
+(input logic [3:0] number,
+output logic [6:0] segment);
+
+always_comb
+    case(number)
+        4'd0: segment = 7'b0111111;
+        4'd1: segment = 7'b0000110;
+        4'd2: segment = 7'b1011011;
+        4'd3: segment = 7'b1001111;
+        4'd4: segment = 7'b1100110;
+        4'd5: segment = 7'b1101101;
+        4'd6: segment = 7'b1111101;
+        4'd7: segment = 7'b0000111;
+        4'd8: segment = 7'b1111111;
+        4'd9: segment = 7'b1100111;
+    endcase
+
+endmodule : BCDtoSevenSegment
+
+// Test module
+// delete before final submission
 module tester
 (input logic [9:0] row, col,
 output logic [7:0] red, green, blue);
