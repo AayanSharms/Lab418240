@@ -193,4 +193,17 @@ module OffsetCheck
 
 endmodule : OffsetCheck
 
+// check if right
+module Synchronizer 
+    # (parameter WIDTH = 4)
+    (input logic clock 
+    input logic [WIDTH-1 : 0] async_in
+    output logic [WIDTH-1 : 0] sync_out);
 
+    logic [WIDTH-1:0] meta;
+
+    always_ff @(posedge clock) begin
+        meta <= async_in
+        sync_out <= meta
+    end
+endmodule : Synchronizer

@@ -1,4 +1,4 @@
-//`default_nettype none
+`default_nettype none
 
 // Wall
 
@@ -24,7 +24,7 @@ output logic game_clock);
 
 always_comb begin
     case ({row, col})
-        {10'd599, 10'd799}: game_clock = 1'b1;
+        {10'd600, 10'd800}: game_clock = 1'b1;
         default: game_clock = 1'b0;
     endcase
 end
@@ -38,6 +38,8 @@ Paddle: 'd1
 Ball: 'd2
 Brick: 'd3
 */
+
+// potentially remove?
 module ColorModule
 (input logic [2:0] module_type,
 output logic [7:0] red, green, blue);
@@ -77,7 +79,7 @@ module Wall
     // column ranges
     logic leftCol, rightCol, topCol;
     RangeCheck #(10) left_col (.val(col), .low(10'd20), .high(10'd49), .is_between(leftCol));
-    RangeCheck #(10) right_col (.val(col), .low(10'd740), .high(10'd779), .is_between(rightCol));
+    RangeCheck #(10) right_col (.val(col), .low(10'd750), .high(10'd779), .is_between(rightCol));
     RangeCheck #(10) top_col (.val(col), .low(10'd20), .high(10'd779), .is_between(topCol));
 
     // row ranges
@@ -112,7 +114,7 @@ module Wall
     // Combinational Collision Testing w/ ball
     logic hitLeft, hitRight;
     OffsetCheck #(10) lc (.val(10'd49), .low(col_ball - 10'd1), .delta(10'd6), .is_between(hitLeft));
-    OffsetCheck #(10) rc (.val(10'd740), .low(col_ball), .delta(10'd6), .is_between(hitRight));
+    OffsetCheck #(10) rc (.val(10'd750), .low(col_ball), .delta(10'd6), .is_between(hitRight));
     OffsetCheck #(10) tc (.val(10'd39), .low(row_ball - 10'd2), .delta(10'd7), .is_between(top_collision));
 
     assign side_collision = hitLeft | hitRight;
@@ -125,7 +127,7 @@ module Paddle
 input logic BTN2, BTN3, clk_40MHz, game_clock, reset,
 output logic [7:0] red, green, blue,
 output logic [9:0] col_left, col_max,
-output logic collision);
+output logic top_collision, side_collision);
 
 logic [7:0] redOn, greenOn, blueOn;
 ColorModule cm(.module_type('d1), .red(redOn), .green(greenOn), .blue(blueOn));
@@ -146,11 +148,15 @@ assign col_max = col_left + 10'd80;
 
 
 // Combinational Collision Testing w/ ball
-logic col_collision, row_collision;
-OffsetCheck #(10) cc (.val(col_ball), .low(col_left - 10'd6), .delta(col_left + 10'd79 + 10'd6), .is_between(col_collision));
-OffsetCheck #(10) rc (.val(row_ball), .low(10'd555 - 10'd6), .delta(10'd579 + 10'd5), .is_between(row_collision));
-assign collision = col_collision & row_collision;
+logic col_collision, row_collision, side_contact, vertical_contact;
+OffsetCheck #(10) cc1 (.val(col_ball), .low(col_left - 10'd6), .delta(10'd79 + 10'd6), .is_between(col_collision));
+OffsetCheck #(10) rc1 (.val(row_ball), .low(10'd555 - 10'd6), .delta(10'd25 + 10'd5), .is_between(row_collision));
 
+OffsetCheck #(10) cc2 (.val(col_ball), .low(col_left - 10'd1), .delta(10'd79 + ), .is_between(vertical_contact));
+OffsetCheck #(10) rc2 (.val(row_ball), .low(10'd555 - 10'd1), .delta(10'd25), .is_between(side_contact));
+
+assign side_collision = col_collision & row_collision & side_contact;
+assign top_collision = col_collision & row_collision & vertical_contact;
 
 // POSITION UDPATES (PER GAME_CLOCK)
 always_ff @(posedge clk_40MHz, posedge reset)
@@ -185,7 +191,8 @@ endmodule : Paddle
 
 module Ball
 (input logic [9:0] row, col,
-input logic brick_collision, wall_collision, paddle_collision,
+input logic brick_collision_top, wall_collision_top, paddle_collision_top,
+brick_collision_side, wall_collision_side, paddle_collision_side,
 game_clock, clk_40MHz, reset, restart, BTN1, intermission,
 output logic [9:0] col_ball, row_ball,
 output logic [7:0] red, green, blue,
@@ -204,7 +211,7 @@ logic moving, right, up; // if ball is moving and moving right and up
 logic death;
 MagComp #(10) comp (.A(10'd599), .B(row_ball + 10'd6), .AltB(death));
 
-// TOO LONG OF AN ALWAYS_FF? SIMPLIFY? + ALSO: CHECK IF BOUNCING IS CORRECT
+// TOO LONG OF AN ALWAYS_FF? SIMPLIFY?
 always_ff @(posedge clk_40MHz, posedge reset) begin
 // reset
 if (reset | restart) begin
@@ -221,31 +228,49 @@ if (intermission) begin
     moving <= 1'b0;
 end
 // BTN1 pressed -> start moving
-else if (BTN1 & ~moving) begin
+else if (~moving) begin
+    // not moving
+    if (BTN1) begin // BTN1 pressed -> time to begin game
     moving <= 1'b1;
     col_ball <= col_ball + 10'd1;
     row_ball <= row_ball - 10'd2;
     right <= 1'b1;
     up <= 1'b1;
+    end
 end
 // Collision detected -> reverse direction
-else if (brick_collision | wall_collision | paddle_collision) begin
-    // flip directions
-    if (right) begin // moving right
-        col_ball <= col_ball - 10'd1;
-        right <= 1'b0;
+else if (brick_collision_top | wall_collision_top | paddle_collision_top |
+        brick_collision_side | wall_collision_side | paddle_collision_side) begin
+    // any sort of collision (b/c note there can be a corner collision)
+    if (brick_collision_top | wall_collision_top | paddle_collision_top) begin
+        // flip directions
+        if (up) begin // moving up
+            row_ball <= row_ball + 10'd2;
+            up <= 1'b0;
+        end
+        else begin // moving down
+            row_ball <= row_ball - 10'd2;
+            up <= 1'b1;
+        end
+    end else begin
+        // if no collision, still update side
+        if (up) row_ball <= row_ball - 10'd2;
+        else row_ball <= row_ball + 10'd2;
     end
-    else begin // moving left
-        col_ball <= col_ball + 10'd1;
-        right <= 1'b1;
-    end
-    if (up) begin // moving up
-        row_ball <= row_ball + 10'd2;
-        up <= 1'b0;
-    end
-    else begin // moving down
-        row_ball <= row_ball - 10'd2;
-        up <= 1'b1;
+    if (brick_collision_side | wall_collision_side | paddle_collision_side) begin
+        // flip directions
+    if (right) begin // moving left
+            col_ball <= col_ball - 10'd1;
+            right <= 1'b0;
+        end
+        else begin // moving right
+            col_ball <= col_ball + 10'd1;
+            right <= 1'b1;
+        end
+    end else begin
+        // if no collision, still update side
+        if (right) col_ball <= col_ball + 10'd1;
+        else col_ball <= col_ball - 10'd1;
     end
 end
 // Ball dies :(
@@ -296,7 +321,7 @@ module Brick
             WIDTH = 10'd100, HEIGHT = 10'd30) // parameterize size
 (input logic [9:0] row, col, col_ball, row_ball,
 input logic game_clock, clk_40MHz, reset,
-output logic collision, active, // check if outputs display correctly
+output logic top_collision, side_collision, active, // check if outputs display correctly
 input logic [7:0] redOn, greenOn, blueOn,
 output logic [7:0] red, green, blue);
 
@@ -312,17 +337,22 @@ assign blue = (valid_row & valid_col & active) ? blueOn : '0;
 
 
 // Combinational Collision Testing w/ ball
-logic col_collision, row_collision;
-OffsetCheck #(10) cc (.val(col_ball), .low(TL_COL - 10'd6), .delta(TL_COL + WIDTH - 1 + 10'd6), .is_between(col_collision));
-OffsetCheck #(10) rc (.val(row_ball), .low(TL_ROW - 10'd6), .delta(TL_ROW + HEIGHT - 1 + 10'd6), .is_between(row_collision));
-assign collision = col_collision & row_collision & active;
+logic col_collision, row_collision, side_contact, vertical_contact;
+OffsetCheck #(10) cc1 (.val(col_ball), .low(TL_COL - 10'd6), .delta(WIDTH - 1 + 10'd6), .is_between(col_collision));
+OffsetCheck #(10) rc1 (.val(row_ball), .low(TL_ROW - 10'd6), .delta(HEIGHT - 1 + 10'd6), .is_between(row_collision));
+
+OffsetCheck #(10) cc2 (.val(col_ball), .low(TL_COL - 10'd1), .delta(WIDTH), .is_between(vertical_contact));
+OffsetCheck #(10) rc2 (.val(row_ball), .low(TL_ROW - 10'd1), .delta(HEIGHT), .is_between(side_contact));
+
+assign side_collision = col_collision & row_collision & active & side_contact;
+assign top_collision = col_collision & row_collision & active & vertical_contact;
 
 always_ff @(posedge clk_40MHz, posedge reset)
 if (reset)
     active <= 1'b1; // make active again
 else if (game_clock) begin
     // if collision, then disable the Brick
-    if (collision)
+    if (side_collision | top_collision)
         active <= 1'b0; // disable if collision
     else
         active <= active; // keep active as is
@@ -335,34 +365,38 @@ module Bricks
 (input logic [9:0] row, col, col_ball, row_ball,
 input logic clk_40MHz, game_clock, reset, restart,
 output logic [7:0] red, green, blue,
-output logic bricks_active, collision);
+output logic bricks_active, top_collision, side_collision);
 
 logic [13:0] active_status;
-logic [13:0] collision_status;
+logic [13:0] top_collision_status;
+logic [13:0] side_collision_status;
 assign bricks_active = ~(active_status == 14'b0);
-assign collision = ~(collision_status == 14'b0);
+assign top_collision = ~(top_collision_status == 14'b0);
+assign side_collision = ~(side_collision_status == 14'b0);
 
 // Color assignments
 logic [7:0] b0r, b1r, b2r, b3r, b4r, b5r, b6r, b7r, 
-        b8r, b9r, b10r, b11r, b12r, b13r, b14r;
+        b8r, b9r, b10r, b11r, b12r, b13r;
 logic [7:0] b0g, b1g, b2g, b3g, b4g, b5g, b6g, b7g, 
-        b8g, b9g, b10g, b11g, b12g, b13g, b14g;
+        b8g, b9g, b10g, b11g, b12g, b13g;
 logic [7:0] b0b, b1b, b2b, b3b, b4b, b5b, b6b, b7b, 
-        b8b, b9b, b10b, b11b, b12b, b13b, b14b;
+        b8b, b9b, b10b, b11b, b12b, b13b;
 
 // NOTE: REPLACE WITH MULTIPLEXER?
 // only one red will be selected
 assign red = b0r | b1r | b2r | b3r | b4r | b5r | b6r | b7r
-            | b8r | b9r | b10r | b11r | b12r | b13r | b14r;
+            | b8r | b9r | b10r | b11r | b12r | b13r;
 assign green = b0g | b1g | b2g | b3g | b4g | b5g | b6g | b7g
-            | b8g | b9g | b10g | b11g | b12g | b13g | b14g;
+            | b8g | b9g | b10g | b11g | b12g | b13g;
 assign blue = b0b | b1b | b2b | b3b | b4b | b5b | b6b | b7b
-            | b8b | b9b | b10b | b11b | b12b | b13b | b14b;
+            | b8b | b9b | b10b | b11b | b12b | b13b;
 
 // top row
 Brick #(70, 100, 100, 30) b0 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[0]), 
+                                .reset(reset | restart), 
+                                .top_collision(top_collision_status[0]), 
+                                .side_collision(side_collision_status[0]), 
                                 .active(active_status[0]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -370,7 +404,9 @@ Brick #(70, 100, 100, 30) b0 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b0r), .green(b0g), .blue(b0b)); 
 Brick #(170, 100, 100, 30) b1 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[1]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[1]), 
+                                .side_collision(side_collision_status[1]), 
                                 .active(active_status[1]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -378,7 +414,9 @@ Brick #(170, 100, 100, 30) b1 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b1r), .green(b1g), .blue(b1b)); 
 Brick #(270, 100, 100, 30) b2 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[2]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[2]), 
+                                .side_collision(side_collision_status[2]), 
                                 .active(active_status[2]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -386,7 +424,9 @@ Brick #(270, 100, 100, 30) b2 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b2r), .green(b2g), .blue(b2b)); 
 Brick #(370, 100, 100, 30) b3 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[3]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[3]), 
+                                .side_collision(side_collision_status[3]), 
                                 .active(active_status[3]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -394,7 +434,9 @@ Brick #(370, 100, 100, 30) b3 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b3r), .green(b3g), .blue(b3b)); 
 Brick #(470, 100, 100, 30) b4 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[4]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[4]), 
+                                .side_collision(side_collision_status[4]), 
                                 .active(active_status[4]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -402,7 +444,9 @@ Brick #(470, 100, 100, 30) b4 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b4r), .green(b4g), .blue(b4b)); 
 Brick #(570, 100, 100, 30) b5 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[5]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[5]), 
+                                .side_collision(side_collision_status[5]),  
                                 .active(active_status[5]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -410,7 +454,9 @@ Brick #(570, 100, 100, 30) b5 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b5r), .green(b5g), .blue(b5b)); 
 Brick #(670, 100, 50, 30) b6 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[6]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[6]), 
+                                .side_collision(side_collision_status[6]),
                                 .active(active_status[6]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -420,7 +466,9 @@ Brick #(670, 100, 50, 30) b6 (.row, .col, .col_ball, .row_ball, .game_clock,
 // 2nd row
 Brick #(70, 150, 50, 30) b7 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[7]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[7]), 
+                                .side_collision(side_collision_status[7]),
                                 .active(active_status[7]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -428,7 +476,9 @@ Brick #(70, 150, 50, 30) b7 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b7r), .green(b7g), .blue(b7b)); 
 Brick #(120, 150, 100, 30) b8 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[8]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[8]), 
+                                .side_collision(side_collision_status[8]),
                                 .active(active_status[8]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -436,7 +486,9 @@ Brick #(120, 150, 100, 30) b8 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b8r), .green(b8g), .blue(b8b)); 
 Brick #(220, 150, 100, 30) b9 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[9]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[9]), 
+                                .side_collision(side_collision_status[9]),
                                 .active(active_status[9]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -444,7 +496,9 @@ Brick #(220, 150, 100, 30) b9 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b9r), .green(b9g), .blue(b9b)); 
 Brick #(320, 150, 100, 30) b10 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[10]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[10]), 
+                                .side_collision(side_collision_status[10]),
                                 .active(active_status[10]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -452,7 +506,9 @@ Brick #(320, 150, 100, 30) b10 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b10r), .green(b10g), .blue(b10b)); 
 Brick #(420, 150, 100, 30) b11 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[11]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[11]), 
+                                .side_collision(side_collision_status[11]),
                                 .active(active_status[11]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -460,7 +516,9 @@ Brick #(420, 150, 100, 30) b11 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b11r), .green(b11g), .blue(b11b)); 
 Brick #(520, 150, 100, 30) b12 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[12]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[12]), 
+                                .side_collision(side_collision_status[12]),
                                 .active(active_status[12]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'hFF),
@@ -468,7 +526,9 @@ Brick #(520, 150, 100, 30) b12 (.row, .col, .col_ball, .row_ball, .game_clock,
                                 .red(b12r), .green(b12g), .blue(b12b)); 
 Brick #(620, 150, 100, 30) b13 (.row, .col, .col_ball, .row_ball, .game_clock, 
                                 .clk_40MHz,
-                                .reset(reset | restart), .collision(collision_status[13]), 
+                                .reset(reset | restart),
+                                .top_collision(top_collision_status[13]), 
+                                .side_collision(side_collision_status[13]),
                                 .active(active_status[13]),
                                 .redOn(8'hFF), 
                                 .greenOn(8'h00),
@@ -495,18 +555,3 @@ always_comb begin
 end
 
 endmodule : tester
-
-
-module Synhcronizer 
-    # (parameter WIDTH = 4)
-    (input logic clock 
-    input logic [WIDTH-1 : 0] async_in
-    output logic [WIDTH-1 : 0] sync_out);
-
-    logic [WIDTH-1:0] meta;
-
-    always_ff @(posedge clock) begin
-        meta <= async_in
-        sync_out <= meta
-    end
-endmodule : Synhcronizer
