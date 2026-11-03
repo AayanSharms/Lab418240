@@ -52,6 +52,7 @@ RangeCheck #(20) vs_sync_check (.val(vsclk_count), .low(20'd0),
 endmodule : VGA
 
 
+/*
 
 module VGA_test;
 logic clock_40MHz, reset, HS, VS, blank;
@@ -117,6 +118,8 @@ initial begin
 end
 
 endmodule : VGA_test
+
+*/
 
 // Generates an 8-stripe color test pattern on the top half of the screen
 // and black on the bottom half, for checking VGA timing.
