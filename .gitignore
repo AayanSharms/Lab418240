@@ -7,3 +7,13 @@ ucli.key
 *.log
 *.str
 .Xil/
+
+# Vivado generated output (rebuilt from the .xpr, .xdc, and sources)
+*.runs/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.sim/
+**/*.srcs/utils_1/
+.DS_Store
